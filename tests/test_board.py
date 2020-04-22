@@ -157,7 +157,7 @@ def test_play_piece():
 		assert True
 
 	board.turn_board(player)
-	board.pieces[player][gameboard.PLAYED][piece_name] = board.pieces[player][gameboard.UNPLAYED].pop(piece_name)
+	board.pieces[player][gameboard.PLAYED].append(board.pieces[player][gameboard.UNPLAYED].pop(piece_name))
 	try:
 		board.play_piece(player, piece_name, piece_orientation_index, coord_i, coord_j)
 		assert False, "Invalid piece: should not come here"
@@ -185,7 +185,7 @@ def test_play_piece():
 
 	coord_i = 0
 	coord_j = 0
-	board.pieces[player][gameboard.PLAYED] = {}
+	board.pieces[player][gameboard.PLAYED] = []
 	assert len(board.pieces[player][gameboard.PLAYED]) == 0, "Piece not yet moved to played"
 	assert board.play_piece(player, piece_name, piece_orientation_index, coord_i, coord_j), "Valid move"
 	assert len(board.pieces[player][gameboard.PLAYED]) == 1, "Piece moved to played"
@@ -231,7 +231,7 @@ def test_validate_play_piece_case1():
 
 	player = gameboard.BLUE
 	piece_name = 'I5'
-	board.pieces[player][gameboard.PLAYED][piece_name] = board.pieces[player][gameboard.UNPLAYED].pop(piece_name) # Skip past case 0
+	board.pieces[player][gameboard.PLAYED].append(board.pieces[player][gameboard.UNPLAYED].pop(piece_name)) # Skip past case 0
 
 	s_gamegrid = """
 					11001100
@@ -272,7 +272,7 @@ def test_validate_play_piece_case2_type1():
 
 	player = gameboard.BLUE
 	piece_name = 'I5'
-	board.pieces[player][gameboard.PLAYED][piece_name] = board.pieces[player][gameboard.UNPLAYED].pop(piece_name) # Skip past case 0
+	board.pieces[player][gameboard.PLAYED].append(board.pieces[player][gameboard.UNPLAYED].pop(piece_name)) # Skip past case 0
 
 	# Scenarios from here - https://docs.google.com/spreadsheets/d/1oyHOQIKF13vacMIbzlxpl9qaU5U82RcDIpwUpxNLlNA/edit?usp=sharing
 	s_gamegrid = """
@@ -359,7 +359,7 @@ def test_validate_play_piece_case2_type2():
 
 	player = gameboard.BLUE
 	piece_name = 'I5'
-	board.pieces[player][gameboard.PLAYED][piece_name] = board.pieces[player][gameboard.UNPLAYED].pop(piece_name) # Skip past case 0
+	board.pieces[player][gameboard.PLAYED].append(board.pieces[player][gameboard.UNPLAYED].pop(piece_name)) # Skip past case 0
 
 	# Scenarios from here - https://docs.google.com/spreadsheets/d/1oyHOQIKF13vacMIbzlxpl9qaU5U82RcDIpwUpxNLlNA/edit?usp=sharing
 	s_gamegrid = """
@@ -474,7 +474,7 @@ def test_validate_play_piece_case3():
 
 	player = gameboard.BLUE
 	piece_name = 'I5'
-	board.pieces[player][gameboard.PLAYED][piece_name] = board.pieces[player][gameboard.UNPLAYED].pop(piece_name) # Skip past case 0
+	board.pieces[player][gameboard.PLAYED].append(board.pieces[player][gameboard.UNPLAYED].pop(piece_name)) # Skip past case 0
 
 	# Scenarios from here - https://docs.google.com/spreadsheets/d/1oyHOQIKF13vacMIbzlxpl9qaU5U82RcDIpwUpxNLlNA/edit?usp=sharing
 	s_gamegrid = """
@@ -565,7 +565,7 @@ def test_validate_play_piece_valid():
 
 	player = gameboard.BLUE
 	piece_name = 'I5'
-	board.pieces[player][gameboard.PLAYED][piece_name] = board.pieces[player][gameboard.UNPLAYED].pop(piece_name) # Skip past case 0
+	board.pieces[player][gameboard.PLAYED].append(board.pieces[player][gameboard.UNPLAYED].pop(piece_name)) # Skip past case 0
 
 	# Scenarios from here - https://docs.google.com/spreadsheets/d/1oyHOQIKF13vacMIbzlxpl9qaU5U82RcDIpwUpxNLlNA/edit?usp=sharing
 	s_gamegrid = """

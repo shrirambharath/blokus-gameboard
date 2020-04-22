@@ -64,10 +64,10 @@ class BlokusBoard:
 		unplayed_pieces = { p.piece_name : p for p in all_pieces }
 
 		self.pieces = {
-			gameboard.BLUE: { gameboard.UNPLAYED:  unplayed_pieces.copy(), gameboard.PLAYED: {} },
-			gameboard.RED: { gameboard.UNPLAYED:  unplayed_pieces.copy(), gameboard.PLAYED: {} },
-			gameboard.YELLOW: { gameboard.UNPLAYED:  unplayed_pieces.copy(), gameboard.PLAYED: {} },
-			gameboard.GREEN: { gameboard.UNPLAYED:  unplayed_pieces.copy(), gameboard.PLAYED: {} }
+			gameboard.BLUE: { gameboard.UNPLAYED: unplayed_pieces.copy(), gameboard.PLAYED: [] },
+			gameboard.RED: { gameboard.UNPLAYED: unplayed_pieces.copy(), gameboard.PLAYED: [] },
+			gameboard.YELLOW: { gameboard.UNPLAYED: unplayed_pieces.copy(), gameboard.PLAYED: [] },
+			gameboard.GREEN: { gameboard.UNPLAYED: unplayed_pieces.copy(), gameboard.PLAYED: [] }
 		}
 		self.current_player = None
 
@@ -120,7 +120,10 @@ class BlokusBoard:
 		self._place_piece_on_board(player, piece_grid, coord_i, coord_j)
 
 		# move piece from unplayed to played
-		self.pieces[player][gameboard.PLAYED][piece_name] = self.pieces[player][gameboard.UNPLAYED].pop(piece_name)
+		played_pieces = self.pieces[player][gameboard.PLAYED]
+		played_pieces.append(self.pieces[player][gameboard.UNPLAYED].pop(piece_name))
+		self.pieces[player][gameboard.PLAYED] = played_pieces
+
 		return True
 
 
@@ -214,4 +217,17 @@ class BlokusBoard:
 	def validate_play_piece_helper(self, player, piece_grid, coord_i, coord_j):
 		is_valid_move, error_reason = self._validate_play_piece(player, piece_grid, coord_i, coord_j) 
 		return is_valid_move
+
+
+	def pretty_print(self):
+		for i in range(0, self.gridsize):
+			line = []
+			for j in range(0, self.gridsize):
+				x = self.grid[i][j]
+				if x == 0:
+					line += ['.']
+				else:
+					line += [str(x)]
+			print(''.join(line))
+		print('\n\n')
 
