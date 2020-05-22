@@ -8,6 +8,9 @@ pytest = "*"
 
 [packages]
 numpy = "*"
+keras = "*"
+tensorflow = "*"
+matplotlib = "*"
 
 [requires]
 python_version = "3.7"

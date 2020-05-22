@@ -7,6 +7,7 @@ class BlokusRandomPlayer:
 
 	def assign_color(self, color):
 		self.color = color
+		self.player_name = "%s-%s" % (self.color, self.player_type)
 		if self.color not in [gameboard.BLUE, gameboard.RED, gameboard.GREEN, gameboard.YELLOW]:
 			raise BoardStateException("Unknown color: %s" % self.color)
 

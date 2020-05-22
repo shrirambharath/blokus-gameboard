@@ -1,5 +1,5 @@
 import gameboard 
-import time
+import time, random
 
 class BlokusGame:
 	def __init__(self, player1, player2, player3, player4, visualize=False, visualizeTimer = 10, gridsize=20):
@@ -23,8 +23,11 @@ class BlokusGame:
 	def setup_game(self):
 		#turn tracking 
 		self.turn_order = [gameboard.BLUE, gameboard.RED, gameboard.YELLOW, gameboard.GREEN]
-		self.current_turn_index = 0
+		self.current_turn_index = random.randint(0,3)
 
+		#for game stats collection later
+		self.start_sequence = [self.turn_order[(self.current_turn_index + i) % 4] for i in range(0,4)]
+		
 
 	def play_game(self):
 		done_players = set()
@@ -74,5 +77,7 @@ class BlokusGame:
 
 			self.final_scores[player] = points
 
-		self.board.pretty_print()
-		print (self.final_scores)
+
+		if self.visualize:
+			self.board.pretty_print()
+			print (self.final_scores)
