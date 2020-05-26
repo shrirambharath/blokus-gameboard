@@ -41,12 +41,12 @@ class BlokusGame:
 		
 			self.board.turn_board(current_player.color)
 			
-			[piece_name, piece_orientation_index, coord_i, coord_j] = current_player.make_move(self.board)
-			if piece_name is None:
+			(piece, piece_orientation_index, coord_i, coord_j) = current_player.make_move(self.board)
+			if piece is None:
 				#current player is done with moves
 				done_players.add(current_player.color)
 			else:	
-				self.board.play_piece(current_player.color, piece_name, piece_orientation_index, coord_i, coord_j)
+				self.board.play_piece(current_player.color, piece.piece_name, piece_orientation_index, coord_i, coord_j)
 
 			self.board.return_board(current_player.color)
 

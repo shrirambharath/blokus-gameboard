@@ -20,4 +20,5 @@ NOT_APPLICABLE = 'n/a'
 
 #player types
 RANDOM_PLAYER = 'random_player'
+GREEDY_PLAYER = 'greedy_player'
 LIVE_PLAYER = 'live_player'

@@ -7,6 +7,8 @@ import time, argparse
 def get_player(p_type):
 	if p_type == gameboard.RANDOM_PLAYER:
 		return gameboard.BlokusRandomPlayer()
+	elif p_type == gameboard.GREEDY_PLAYER:
+		return gameboard.BlokusGreedyPlayer()
 
 	raise gameboard.BoardStateException("Unknown player type: %s" % p_type)
 
