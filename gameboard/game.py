@@ -14,10 +14,10 @@ class BlokusGame:
 		self.visualizeTimer = visualizeTimer
 		self.final_scores = {}
 
-		player1.assign_color(gameboard.BLUE)
-		player2.assign_color(gameboard.RED)
-		player3.assign_color(gameboard.YELLOW)
-		player4.assign_color(gameboard.GREEN)
+		player1.assign_color(self.board.players[gameboard.BLUE][gameboard.COLOR], gameboard.BLUE)
+		player2.assign_color(self.board.players[gameboard.RED][gameboard.COLOR], gameboard.RED)
+		player3.assign_color(self.board.players[gameboard.YELLOW][gameboard.COLOR], gameboard.YELLOW)
+		player4.assign_color(self.board.players[gameboard.GREEN][gameboard.COLOR], gameboard.GREEN)
 
 
 	def setup_game(self):
@@ -27,6 +27,9 @@ class BlokusGame:
 
 		#for game stats collection later
 		self.start_sequence = [self.turn_order[(self.current_turn_index + i) % 4] for i in range(0,4)]
+		self.player_sequence = [self.players[self.turn_order[(self.current_turn_index + i) % 4]] for i in range(0,4)]
+
+		gameboard.BlokusPlayerHelper.reset_skips()
 		
 
 	def play_game(self):
@@ -52,7 +55,7 @@ class BlokusGame:
 
 			
 			if self.visualize:
-				self.board.pretty_print()
+				self.board.pretty_print(self.player_sequence)
 				time.sleep(self.visualizeTimer)
 
 
@@ -79,5 +82,5 @@ class BlokusGame:
 
 
 		if self.visualize:
-			self.board.pretty_print()
+			self.board.pretty_print(self.player_sequence)
 			print (self.final_scores)

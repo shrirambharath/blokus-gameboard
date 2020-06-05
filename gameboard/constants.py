@@ -19,6 +19,7 @@ NO_CORNER = 'no_corner'
 NOT_APPLICABLE = 'n/a'
 
 #player types
-RANDOM_PLAYER = 'random_player'
-GREEDY_PLAYER = 'greedy_player'
-LIVE_PLAYER = 'live_player'
+RANDOM_PLAYER = 'random'
+GREEDY_PLAYER = 'greedy'
+GREEDY_LOOKAHEAD_PLAYER = 'lookahead'
+LIVE_PLAYER = 'live'

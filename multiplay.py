@@ -2,13 +2,15 @@
 
 import gameboard
 import time, argparse
-
+from prettytable import PrettyTable
 
 def get_player(p_type):
 	if p_type == gameboard.RANDOM_PLAYER:
 		return gameboard.BlokusRandomPlayer()
 	elif p_type == gameboard.GREEDY_PLAYER:
 		return gameboard.BlokusGreedyPlayer()
+	elif p_type == gameboard.GREEDY_LOOKAHEAD_PLAYER:
+		return gameboard.BlokusGreedyLookAheadPlayer()
 
 	raise gameboard.BoardStateException("Unknown player type: %s" % p_type)
 
@@ -35,15 +37,12 @@ def update_game_stats(game, player_record):
 	game_final_scores = game.final_scores
 	game_start_sequence = game.start_sequence
 
-	player_win_record = player_record['win']
+	player_finish_record = player_record['finish']
 	player_score_record = player_record['score']
 	player_turn_record = player_record['turn']
 	player_name_record = player_record['names']
 	
 	# {'blue': 58, 'red': 36, 'yellow': 51, 'green': 60}
-	leading_score = 0
-	leader = None
-
 	for (player, player_score) in game_final_scores.items():
 		(best_score, running_total_score, num_scores) = player_score_record[player]
 		if best_score < player_score:
@@ -52,12 +51,22 @@ def update_game_stats(game, player_record):
 		num_scores += 1
 		player_score_record[player] = (best_score, running_total_score, num_scores)
 
-		if player_score > leading_score:
-			leading_score = player_score
-			leader = player
 
-	win_record = player_win_record[leader]
-	player_win_record[leader] = win_record + 1
+	finish_order = sorted(game_final_scores.items(), key=lambda x:x[1], reverse=True) 
+	for finish in range(0,len(finish_order)):
+		player = finish_order[finish][0]
+		(f1, f2, f3, f4) = player_finish_record[player]
+
+		if finish == 0:
+			f1 += 1; 
+		elif finish == 1:
+			f2 += 1;
+		elif finish ==2:
+			f3 += 1; 
+		else:
+			f4 += 1; 
+		player_finish_record[player] = (f1, f2, f3, f4)
+
 
 	for index in range(0,len(game_start_sequence)):
 		player = game_start_sequence[index]
@@ -72,28 +81,40 @@ def update_game_stats(game, player_record):
 	for (player, player_obj) in game.players.items():
 		player_name_record[player] = player_obj.player_name
 
-	player_record['win'] = player_win_record
+	player_record['finish'] = player_finish_record
 	player_record['score'] = player_score_record
 	player_record['turn'] = player_turn_record
 	player_record['names'] = player_name_record
+	if 'order' not in player_record:
+		player_record['order'] = game.turn_order
 
 	return player_record
 
 
 def print_results(system_stats, player_record):
-	player_win_record = player_record['win']
+	player_finish_record = player_record['finish']
 	player_score_record = player_record['score']
 	player_turn_record = player_record['turn']
 	player_name_record = player_record['names']
+	player_turn_order = player_record['order']
 
+	print("\n\n")
 	print("Games played: %d" % len(system_stats))
 	print("Shortest game: %d msecs" % min(system_stats))
 	print("Longest game: %d msecs" % max(system_stats))
 	print("Average game length: %d msecs" % (sum(system_stats) / len(system_stats)))
 
-	for player in player_win_record.keys():
+	t = PrettyTable(['Name', 'Finish 1st', 'Finish 2nd', 'Finish 3rd', 'Finish 4th', 'Avg Finish', 'Starts', 'Avg Start', 'Best Score', 'Avg Score'])
+
+	for player in player_turn_order:
 		player_name = player_name_record[player]
-		win_pct = float(player_win_record[player]) * 100.0 / float(len(system_stats))
+		_f1_pct = float(player_finish_record[player][0]) / float(len(system_stats))
+		_f2_pct = float(player_finish_record[player][1]) / float(len(system_stats))
+		_f3_pct = float(player_finish_record[player][2]) / float(len(system_stats))
+		_f4_pct = float(player_finish_record[player][3]) / float(len(system_stats))
+		_avg_finish = ((1.0 * float(player_finish_record[player][0])) + (2.0 * float(player_finish_record[player][1])) + \
+			(3.0 * float(player_finish_record[player][2])) + (4.0 * float(player_finish_record[player][3]))) / \
+			float(player_finish_record[player][0] + player_finish_record[player][1] + player_finish_record[player][2] + player_finish_record[player][3])
 
 		(best_score, running_total_score, num_scores) = player_score_record[player]
 		avg_score = float(running_total_score) / float(num_scores)
@@ -101,13 +122,16 @@ def print_results(system_stats, player_record):
 		(num_starts, running_total_start_positions, num_entries) = player_turn_record[player]
 		avg_start = float(running_total_start_positions) / float(num_entries)
 
-		print("\tPlayer: %s, Win %%: %.2f, Starts: %d, AvgStart: %.2f, Best game score: %d, Avg game score: %.2f" % (player_name, win_pct, num_starts, avg_start, best_score, avg_score))
-	print("\n")
+		t.add_row([player_name, '%.2f' % _f1_pct, '%.2f' % _f2_pct, '%.2f' % _f3_pct, '%.2f' % _f4_pct, '%.2f' % _avg_finish, 
+			num_starts, '%.2f' % avg_start, best_score, '%.2f' % avg_score])
+
+	print(t)
+	print("\n\n")
 
 
 def run(player_types, num_games=10, screen_update=10):
 	player_record = {
-		'win': { gameboard.BLUE: 0, gameboard.YELLOW: 0, gameboard.GREEN: 0, gameboard.RED: 0 },
+		'finish': { gameboard.BLUE: (0,0,0,0), gameboard.YELLOW: (0,0,0,0), gameboard.GREEN: (0,0,0,0), gameboard.RED: (0,0,0,0) }, #( # 1st, # 2nd, # 3rd, # 4th)
 		'score': { gameboard.BLUE: (0,0,0), gameboard.YELLOW: (0,0,0), gameboard.GREEN: (0,0,0), gameboard.RED: (0,0,0) }, #(best score, running total, num scores)
 		'turn': { gameboard.BLUE: (0,0,0), gameboard.YELLOW: (0,0,0), gameboard.GREEN: (0,0,0), gameboard.RED: (0,0,0) }, #(num starts, running total start positions, num entries)
 		'names': { gameboard.BLUE: None, gameboard.YELLOW: None, gameboard.GREEN: None, gameboard.RED: None }
