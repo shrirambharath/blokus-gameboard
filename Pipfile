@@ -8,6 +8,10 @@ pytest = "*"
 
 [packages]
 numpy = "*"
+keras = "*"
+tensorflow = "*"
+matplotlib = "*"
+prettytable = "*"
 
 [requires]
 python_version = "3.7"

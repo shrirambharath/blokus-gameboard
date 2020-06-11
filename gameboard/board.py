@@ -128,6 +128,7 @@ class BlokusBoard:
 
 
 	def _rotate_board(self, player):
+		self.prev_grid = self.grid.copy()
 		rotation_index = self.players[player][gameboard.ROTATION]
 		self.grid = np.rot90(self.grid, rotation_index)
 
@@ -219,7 +220,10 @@ class BlokusBoard:
 		return is_valid_move
 
 
-	def pretty_print(self):
+	def pretty_print(self, player_sequence=None):
+		YELLOW = '\033[93m'
+		END = '\033[0m'
+
 		for i in range(0, self.gridsize):
 			line = []
 			for j in range(0, self.gridsize):
@@ -227,7 +231,14 @@ class BlokusBoard:
 				if x == 0:
 					line += ['.']
 				else:
-					line += [str(x)]
+					if self.grid[i][j] == self.prev_grid[i][j]:
+						line += [str(x)]
+					else:
+						line += [YELLOW + str(x) + END]
+
+			if player_sequence:
+				if i < len(player_sequence):
+					line += ["\t\t\t" + str(player_sequence[i])]
 			print(''.join(line))
 		print('\n\n')
 

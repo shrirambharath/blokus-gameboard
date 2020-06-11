@@ -1,5 +1,5 @@
 import gameboard 
-import time
+import time, random
 
 class BlokusGame:
 	def __init__(self, player1, player2, player3, player4, visualize=False, visualizeTimer = 10, gridsize=20):
@@ -14,17 +14,23 @@ class BlokusGame:
 		self.visualizeTimer = visualizeTimer
 		self.final_scores = {}
 
-		player1.assign_color(gameboard.BLUE)
-		player2.assign_color(gameboard.RED)
-		player3.assign_color(gameboard.YELLOW)
-		player4.assign_color(gameboard.GREEN)
+		player1.assign_color(self.board.players[gameboard.BLUE][gameboard.COLOR], gameboard.BLUE)
+		player2.assign_color(self.board.players[gameboard.RED][gameboard.COLOR], gameboard.RED)
+		player3.assign_color(self.board.players[gameboard.YELLOW][gameboard.COLOR], gameboard.YELLOW)
+		player4.assign_color(self.board.players[gameboard.GREEN][gameboard.COLOR], gameboard.GREEN)
 
 
 	def setup_game(self):
 		#turn tracking 
 		self.turn_order = [gameboard.BLUE, gameboard.RED, gameboard.YELLOW, gameboard.GREEN]
-		self.current_turn_index = 0
+		self.current_turn_index = random.randint(0,3)
 
+		#for game stats collection later
+		self.start_sequence = [self.turn_order[(self.current_turn_index + i) % 4] for i in range(0,4)]
+		self.player_sequence = [self.players[self.turn_order[(self.current_turn_index + i) % 4]] for i in range(0,4)]
+
+		gameboard.BlokusPlayerHelper.reset_skips()
+		
 
 	def play_game(self):
 		done_players = set()
@@ -38,18 +44,18 @@ class BlokusGame:
 		
 			self.board.turn_board(current_player.color)
 			
-			[piece_name, piece_orientation_index, coord_i, coord_j] = current_player.make_move(self.board)
-			if piece_name is None:
+			(piece, piece_orientation_index, coord_i, coord_j) = current_player.make_move(self.board)
+			if piece is None:
 				#current player is done with moves
 				done_players.add(current_player.color)
 			else:	
-				self.board.play_piece(current_player.color, piece_name, piece_orientation_index, coord_i, coord_j)
+				self.board.play_piece(current_player.color, piece.piece_name, piece_orientation_index, coord_i, coord_j)
 
 			self.board.return_board(current_player.color)
 
 			
 			if self.visualize:
-				self.board.pretty_print()
+				self.board.pretty_print(self.player_sequence)
 				time.sleep(self.visualizeTimer)
 
 
@@ -74,5 +80,7 @@ class BlokusGame:
 
 			self.final_scores[player] = points
 
-		self.board.pretty_print()
-		print (self.final_scores)
+
+		if self.visualize:
+			self.board.pretty_print(self.player_sequence)
+			print (self.final_scores)
