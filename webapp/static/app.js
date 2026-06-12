@@ -6,10 +6,16 @@ const GRID = 20;
 let ws = null;
 let myToken = localStorage.getItem("blokus_token") || null;
 let state = null;                 // last 'state' message
-const sel = {                     // current piece selection
+
+// current piece selection
+const sel = {
 	color: null, piece: null, pieceData: null,
-	byOrientation: {}, orients: [], orientIdx: 0,
+	byOrientation: {},            // engine orientation index (string) -> [placements]
+	keyMap: {},                   // gridKey -> orientation index (string)
+	curO: null,                   // current orientation index (string)
+	curGrid: null,                // display grid for curO
 };
+
 let anchors = new Map();          // "r,c" -> {move_id, cells}
 let previewCells = [];
 
@@ -18,7 +24,10 @@ const statusEl = document.getElementById("status");
 const scoresEl = document.getElementById("scores");
 const trayEl = document.getElementById("tray");
 const hintEl = document.getElementById("hint");
-const rotateBtn = document.getElementById("rotate");
+const previewEl = document.getElementById("preview");
+const rotCwBtn = document.getElementById("rot-cw");
+const rotCcwBtn = document.getElementById("rot-ccw");
+const flipBtn = document.getElementById("flip");
 const clearBtn = document.getElementById("clear");
 const cells = [];
 
@@ -41,7 +50,7 @@ boardEl.addEventListener("mouseover", (e) => {
 	if (key && anchors.has(key)) showPreview(anchors.get(key).cells);
 });
 boardEl.addEventListener("mouseout", (e) => {
-	if (anchorKey(e.target)) clearPreview();
+	if (anchorKey(e.target)) clearBoardPreview();
 });
 boardEl.addEventListener("click", (e) => {
 	const key = anchorKey(e.target);
@@ -143,21 +152,21 @@ function renderScores() {
 function renderTray() {
 	trayEl.innerHTML = "";
 	const color = state.your_turn ? state.current_color : null;
-	const pieces = color ? (state.your_pieces[color] || []) : [];
+	const headerEl = document.getElementById("tray-header");
 	if (!color) {
-		document.getElementById("tray-header").textContent =
+		headerEl.textContent =
 			state.your_colors && state.your_colors.length ? "Your pieces (wait for your turn)" : "Spectating";
 	} else {
-		document.getElementById("tray-header").textContent = "Your pieces";
+		headerEl.textContent = "Your pieces";
 	}
+	const pieces = color ? (state.your_pieces[color] || []) : [];
 	for (const p of pieces) {
 		const firstO = Object.keys(p.orientations)[0];
-		trayEl.appendChild(pieceThumb(p, firstO, color));
+		trayEl.appendChild(pieceThumb(p, p.orientations[firstO], color));
 	}
 }
 
-function pieceThumb(p, oIndex, color) {
-	const grid = p.orientations[oIndex];
+function pieceThumb(p, grid, color) {
 	const el = document.createElement("div");
 	el.className = "piece" + (sel.piece === p.name ? " selected" : "");
 	el.style.gridTemplateColumns = `repeat(${grid[0].length}, 10px)`;
@@ -179,7 +188,7 @@ function colorId(color) {
 	return seat ? seat.color_id : 1;
 }
 
-// ---- selection + placement -------------------------------------------------
+// ---- selection + preview ---------------------------------------------------
 
 function selectPiece(p, color) {
 	hintEl.textContent = "";
@@ -188,57 +197,120 @@ function selectPiece(p, color) {
 	sel.piece = p.name;
 	sel.pieceData = p;
 	sel.byOrientation = {};
-	sel.orients = [];
-	sel.orientIdx = 0;
-	renderTray();   // highlight selected
+	sel.keyMap = {};
+	for (const k of Object.keys(p.orientations)) sel.keyMap[gridKey(p.orientations[k])] = k;
+	// show the natural orientation immediately; placements refine the board
+	sel.curO = Object.keys(p.orientations)[0];
+	sel.curGrid = p.orientations[sel.curO];
+	renderTray();             // highlight selection in tray
+	renderPreview();
+	setControlsEnabled(true);
 	send({ type: "select_piece", color, piece: p.name });
 }
 
 function onPlacements(msg) {
 	if (msg.piece !== sel.piece || msg.color !== sel.color) return;
 	sel.byOrientation = msg.by_orientation || {};
-	sel.orients = Object.keys(sel.byOrientation).map(Number).sort((a, b) => a - b);
-	sel.orientIdx = 0;
-	if (sel.orients.length === 0) {
-		hintEl.textContent = "No legal spot for that piece — try another.";
-		rotateBtn.disabled = true;
-		clearBtn.disabled = false;
-		clearAnchors();
+	const valid = Object.keys(sel.byOrientation);
+	if (valid.length === 0) {
+		hintEl.textContent = "No legal spot for this piece anywhere — pick another.";
+		highlightOrientation();
 		return;
 	}
-	rotateBtn.disabled = sel.orients.length <= 1;
-	clearBtn.disabled = false;
-	highlightCurrentOrientation();
+	// jump to a valid orientation so the player immediately sees placements
+	if (!(sel.curO in sel.byOrientation)) {
+		setOrientation(valid.map(Number).sort((a, b) => a - b)[0].toString());
+		return;
+	}
+	highlightOrientation();
 }
 
-function highlightCurrentOrientation() {
+function setOrientation(o) {
+	if (!(o in sel.pieceData.orientations)) return;
+	sel.curO = o;
+	sel.curGrid = sel.pieceData.orientations[o];
+	renderPreview();
+	highlightOrientation();
+}
+
+function renderPreview() {
+	previewEl.innerHTML = "";
+	if (!sel.curGrid) {
+		previewEl.innerHTML = '<span class="empty">Pick a piece →</span>';
+		return;
+	}
+	previewEl.style.gridTemplateColumns = `repeat(${sel.curGrid[0].length}, 18px)`;
+	previewEl.style.setProperty("--sel", `var(--c${colorId(sel.color)})`);
+	for (const row of sel.curGrid) {
+		for (const v of row) {
+			const pc = document.createElement("div");
+			pc.className = "pc " + (v ? "on" : "off");
+			previewEl.appendChild(pc);
+		}
+	}
+}
+
+function highlightOrientation() {
 	clearAnchors();
-	const o = sel.orients[sel.orientIdx];
-	const placements = sel.byOrientation[o] || [];
+	const placements = (sel.curO && sel.byOrientation[sel.curO]) || [];
 	for (const pl of placements) {
 		const [r, c] = pl.anchor;
 		cellAt(r, c).classList.add("anchor");
 		anchors.set(r + "," + c, pl);
 	}
-	hintEl.textContent = `${placements.length} spot${placements.length === 1 ? "" : "s"}`
-		+ (sel.orients.length > 1 ? ` · orientation ${sel.orientIdx + 1}/${sel.orients.length}` : "")
-		+ ". Hover to preview, click to place.";
+	if (placements.length) {
+		hintEl.textContent = `${placements.length} spot${placements.length === 1 ? "" : "s"} in this orientation. `
+			+ "Hover the board to preview, click to place.";
+		hintEl.classList.remove("error");
+	} else if (Object.keys(sel.byOrientation).length) {
+		hintEl.textContent = "No spot in this orientation — rotate or flip to find one.";
+		hintEl.classList.remove("error");
+	}
 }
 
-rotateBtn.addEventListener("click", () => {
-	if (sel.orients.length <= 1) return;
-	sel.orientIdx = (sel.orientIdx + 1) % sel.orients.length;
-	highlightCurrentOrientation();
-});
+// ---- grid transforms (client-side rotate / flip) ---------------------------
 
+function rotateCW(grid) {
+	const R = grid.length, C = grid[0].length;
+	const out = Array.from({ length: C }, () => Array(R).fill(0));
+	for (let r = 0; r < R; r++) for (let c = 0; c < C; c++) out[c][R - 1 - r] = grid[r][c];
+	return out;
+}
+function rotateCCW(grid) {
+	const R = grid.length, C = grid[0].length;
+	const out = Array.from({ length: C }, () => Array(R).fill(0));
+	for (let r = 0; r < R; r++) for (let c = 0; c < C; c++) out[C - 1 - c][r] = grid[r][c];
+	return out;
+}
+function flipH(grid) { return grid.map((row) => row.slice().reverse()); }
+function gridKey(grid) { return grid.map((r) => r.join("")).join("/"); }
+
+function applyTransform(fn) {
+	if (!sel.curGrid) return;
+	const o = sel.keyMap[gridKey(fn(sel.curGrid))];
+	if (o !== undefined) setOrientation(o);
+}
+
+rotCwBtn.addEventListener("click", () => applyTransform(rotateCW));
+rotCcwBtn.addEventListener("click", () => applyTransform(rotateCCW));
+flipBtn.addEventListener("click", () => applyTransform(flipH));
 clearBtn.addEventListener("click", clearSelection);
+
+function setControlsEnabled(on) {
+	rotCwBtn.disabled = !on;
+	rotCcwBtn.disabled = !on;
+	flipBtn.disabled = !on;
+	clearBtn.disabled = !on;
+}
+
+// ---- clearing --------------------------------------------------------------
 
 function clearSelection() {
 	sel.color = null; sel.piece = null; sel.pieceData = null;
-	sel.byOrientation = {}; sel.orients = []; sel.orientIdx = 0;
-	rotateBtn.disabled = true;
-	clearBtn.disabled = true;
+	sel.byOrientation = {}; sel.keyMap = {}; sel.curO = null; sel.curGrid = null;
+	setControlsEnabled(false);
 	clearAnchors();
+	renderPreview();
 	hintEl.textContent = "";
 	hintEl.classList.remove("error");
 	const selectedEl = trayEl.querySelector(".piece.selected");
@@ -246,20 +318,20 @@ function clearSelection() {
 }
 
 function clearAnchors() {
-	clearPreview();
+	clearBoardPreview();
 	for (const el of cells) el.classList.remove("anchor");
 	anchors.clear();
 }
 
 function showPreview(cellsList) {
-	clearPreview();
+	clearBoardPreview();
 	for (const [r, c] of cellsList) {
 		cellAt(r, c).classList.add("preview");
 		previewCells.push([r, c]);
 	}
 }
 
-function clearPreview() {
+function clearBoardPreview() {
 	for (const [r, c] of previewCells) cellAt(r, c).classList.remove("preview");
 	previewCells = [];
 }
@@ -268,4 +340,5 @@ function clearPreview() {
 
 document.getElementById("new-game").addEventListener("click", () => send({ type: "new_game" }));
 
+renderPreview();
 connect();

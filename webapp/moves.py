@@ -69,18 +69,28 @@ def enumerate_placements(board, color, piece_name, orientation_filter=None):
 	for o_index, piece_grid in piece.piece_grid_orientations.items():
 		if orientation_filter is not None and o_index != orientation_filter:
 			continue
+		filled = [(di, dj)
+				  for di in range(len(piece_grid))
+				  for dj in range(len(piece_grid[0]))
+				  if piece_grid[di][dj] == 1]
 		placements = []
-		for (ci, cj) in candidates:
-			if not board.validate_play_piece_helper(color, piece_grid, ci, cj):
-				continue
-			cells = []
-			for di in range(len(piece_grid)):
-				for dj in range(len(piece_grid[0])):
-					if piece_grid[di][dj] == 1:
-						cells.append(rotated_to_global(coord_map, ci + di, cj + dj, gridsize))
-			anchor = min(cells, key=lambda rc: (rc[0], rc[1]))
-			move_id = "%s:%d:%d:%d" % (piece_name, o_index, ci, cj)
-			placements.append({"move_id": move_id, "cells": cells, "anchor": anchor})
+		seen = set()
+		for (cr, cc) in candidates:
+			# A legal placement only needs ONE of the piece's cells to touch the
+			# corner candidate -- not necessarily its (0,0) cell. So try anchoring
+			# each filled cell onto (cr,cc) and let the engine validate the rest.
+			for (dr, dc) in filled:
+				oi, oj = cr - dr, cc - dc
+				if oi < 0 or oj < 0 or (oi, oj) in seen:
+					continue
+				if not board.validate_play_piece_helper(color, piece_grid, oi, oj):
+					continue
+				seen.add((oi, oj))
+				cells = [rotated_to_global(coord_map, oi + di, oj + dj, gridsize)
+						 for (di, dj) in filled]
+				anchor = min(cells, key=lambda rc: (rc[0], rc[1]))
+				move_id = "%s:%d:%d:%d" % (piece_name, o_index, oi, oj)
+				placements.append({"move_id": move_id, "cells": cells, "anchor": anchor})
 		if placements:
 			result[o_index] = placements
 	return result

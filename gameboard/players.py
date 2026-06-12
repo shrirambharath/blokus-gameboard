@@ -18,11 +18,27 @@ class BlokusPlayer:
 
 	def _identify_i_j_moves(self, board, _i_j_candidates, _unplayed_pieces):
 		_candidate_tuples = []
-		for (i,j) in _i_j_candidates:
+		_seen = set()
+		for (ci, cj) in _i_j_candidates:
 			for (piece_name, piece) in _unplayed_pieces.items():
 				for (piece_orientation_index, piece_grid) in piece.piece_grid_orientations.items():
-					if board.validate_play_piece_helper(self.color, piece_grid, i, j):
-						_candidate_tuples += [(piece, piece_orientation_index, i, j)]
+					# A legal placement only needs ONE cell of the piece to touch the
+					# corner candidate (ci,cj) -- not necessarily its (0,0) cell. Try
+					# anchoring each filled cell onto the candidate and let the board
+					# validate the rest. (origin = candidate - cell offset)
+					for di in range(0, len(piece_grid)):
+						for dj in range(0, len(piece_grid[0])):
+							if piece_grid[di][dj] != 1:
+								continue
+							oi, oj = ci - di, cj - dj
+							if oi < 0 or oj < 0:
+								continue
+							key = (piece_name, piece_orientation_index, oi, oj)
+							if key in _seen:
+								continue
+							_seen.add(key)
+							if board.validate_play_piece_helper(self.color, piece_grid, oi, oj):
+								_candidate_tuples += [(piece, piece_orientation_index, oi, oj)]
 		return _candidate_tuples
 
 

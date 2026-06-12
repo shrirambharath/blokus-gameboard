@@ -123,6 +123,28 @@ main {
 .piece .pc.on { background: var(--sel, #555); }
 .piece .pc.off { background: transparent; }
 
-#controls { display: flex; gap: 8px; margin-bottom: 12px; }
+#preview-wrap {
+	margin-bottom: 18px;
+	padding: 12px;
+	border: 1px solid var(--line);
+	border-radius: 8px;
+	background: #fff;
+}
+#preview-title { font-weight: 600; margin-bottom: 8px; }
+#preview {
+	display: grid;
+	gap: 2px;
+	justify-content: center;
+	align-content: center;
+	min-height: 92px;
+	margin-bottom: 10px;
+}
+#preview .pc { width: 18px; height: 18px; border-radius: 2px; }
+#preview .pc.on { background: var(--sel, #555); }
+#preview .pc.off { background: transparent; }
+#preview .empty { color: #999; font-size: 13px; }
+#preview-controls { display: flex; gap: 6px; flex-wrap: wrap; }
+#preview-controls button { padding: 6px 10px; }
+
 .hint { font-size: 13px; color: #666; min-height: 20px; }
 .hint.error { color: #b91c1c; }

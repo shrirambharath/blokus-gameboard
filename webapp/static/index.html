@@ -20,12 +20,21 @@
 
 		<aside id="panel">
 			<div id="scores"></div>
+
+			<div id="preview-wrap">
+				<div id="preview-title">Selected piece</div>
+				<div id="preview"></div>
+				<div id="preview-controls">
+					<button id="rot-ccw" disabled title="Rotate left">⟲</button>
+					<button id="rot-cw" disabled title="Rotate right">⟳</button>
+					<button id="flip" disabled title="Flip / mirror">⇄ Flip</button>
+					<button id="clear" disabled>Clear</button>
+				</div>
+			</div>
+
 			<div id="tray-header">Your pieces</div>
 			<div id="tray"></div>
-			<div id="controls">
-				<button id="rotate" disabled>Rotate ⟳</button>
-				<button id="clear" disabled>Clear selection</button>
-			</div>
+
 			<div id="hint" class="hint"></div>
 		</aside>
 	</main>
