@@ -1,34 +1,35 @@
 "use strict";
 
 const COLOR_NAME = { blue: "Blue", red: "Red", yellow: "Yellow", green: "Green" };
+const COLOR_ID = { blue: 1, red: 2, yellow: 3, green: 4 };
 const GRID = 20;
 
 let ws = null;
 let myToken = localStorage.getItem("blokus_token") || null;
-let state = null;                 // last 'state' message
+let state = null;
+let lastEventId = 0;
+let toastTimer = null;
 
-// current piece selection
+// current piece selection + pending (chosen-but-unconfirmed) placement
 const sel = {
 	color: null, piece: null, pieceData: null,
-	byOrientation: {},            // engine orientation index (string) -> [placements]
-	keyMap: {},                   // gridKey -> orientation index (string)
-	curO: null,                   // current orientation index (string)
-	curGrid: null,                // display grid for curO
+	byOrientation: {}, keyMap: {}, curO: null, curGrid: null,
 };
-
-let anchors = new Map();          // "r,c" -> {move_id, cells}
+let pending = null;               // {move_id, cells} awaiting confirmation
+let anchors = new Map();          // "r,c" -> placement
 let previewCells = [];
 
 const boardEl = document.getElementById("board");
 const statusEl = document.getElementById("status");
-const scoresEl = document.getElementById("scores");
-const trayEl = document.getElementById("tray");
 const hintEl = document.getElementById("hint");
 const previewEl = document.getElementById("preview");
+const toastEl = document.getElementById("toast");
 const rotCwBtn = document.getElementById("rot-cw");
 const rotCcwBtn = document.getElementById("rot-ccw");
 const flipBtn = document.getElementById("flip");
 const clearBtn = document.getElementById("clear");
+const confirmBtn = document.getElementById("confirm");
+const cancelBtn = document.getElementById("cancel");
 const cells = [];
 
 // ---- board scaffold (built once) -------------------------------------------
@@ -46,15 +47,14 @@ for (let r = 0; r < GRID; r++) {
 const cellAt = (r, c) => cells[r * GRID + c];
 
 boardEl.addEventListener("mouseover", (e) => {
+	if (pending) return;
 	const key = anchorKey(e.target);
-	if (key && anchors.has(key)) showPreview(anchors.get(key).cells);
+	if (key && anchors.has(key)) showHover(anchors.get(key).cells);
 });
-boardEl.addEventListener("mouseout", (e) => {
-	if (anchorKey(e.target)) clearBoardPreview();
-});
+boardEl.addEventListener("mouseout", (e) => { if (!pending && anchorKey(e.target)) clearHover(); });
 boardEl.addEventListener("click", (e) => {
 	const key = anchorKey(e.target);
-	if (key && anchors.has(key)) send({ type: "make_move", move_id: anchors.get(key).move_id });
+	if (key && anchors.has(key)) choosePending(anchors.get(key));
 });
 
 function anchorKey(el) {
@@ -70,10 +70,7 @@ function connect() {
 	ws.onclose = () => { statusEl.textContent = "Disconnected — retrying…"; setTimeout(connect, 1500); };
 	ws.onmessage = (ev) => handle(JSON.parse(ev.data));
 }
-
-function send(obj) {
-	if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj));
-}
+function send(obj) { if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj)); }
 
 function handle(msg) {
 	if (msg.type === "welcome") {
@@ -81,6 +78,7 @@ function handle(msg) {
 		localStorage.setItem("blokus_token", myToken);
 	} else if (msg.type === "state") {
 		state = msg;
+		maybeToast(msg.last_event);
 		clearSelection();
 		render();
 	} else if (msg.type === "placements") {
@@ -96,8 +94,53 @@ function handle(msg) {
 function render() {
 	renderBoard();
 	renderStatus();
-	renderScores();
-	renderTray();
+	renderSeatCards();
+	renderGameOver();
+}
+
+function renderGameOver() {
+	const overlay = document.getElementById("gameover");
+	if (state.status !== "game_over" || !state.final_scores) {
+		overlay.classList.add("hidden");
+		return;
+	}
+	const rows = state.seats
+		.map((s) => ({ ...s, score: state.final_scores[s.color] }))
+		.sort((a, b) => b.score - a.score);
+	const top = rows[0].score;
+	const winners = rows.filter((r) => r.score === top);
+	const youWon = winners.some((w) => (state.your_colors || []).includes(w.color));
+
+	const card = overlay.querySelector(".overlay-card");
+	const titleEl = document.getElementById("go-title");
+	if (winners.length > 1) {
+		card.style.setProperty("--win", "var(--ink)");
+		titleEl.textContent = youWon
+			? "You tie for the win!"
+			: winners.map((w) => COLOR_NAME[w.color]).join(" & ") + " tie!";
+	} else {
+		card.style.setProperty("--win", `var(--c${winners[0].color_id})`);
+		titleEl.textContent = youWon ? "You win! 🎉" : `${COLOR_NAME[winners[0].color]} wins!`;
+	}
+	document.getElementById("go-sub").textContent =
+		`Final score: ${top}` + (winners.length === 1 ? ` · ${winners[0].label}` : "");
+
+	const standings = document.getElementById("go-standings");
+	standings.innerHTML = "";
+	for (const r of rows) {
+		const rank = rows.filter((x) => x.score > r.score).length + 1;
+		const isYou = (state.your_colors || []).includes(r.color);
+		const row = document.createElement("div");
+		row.className = "go-row" + (r.score === top ? " winner" : "");
+		row.style.setProperty("--win", `var(--c${r.color_id})`);
+		row.innerHTML =
+			`<span class="go-rank">#${rank}</span>`
+			+ `<span class="swatch c${r.color_id}"></span>`
+			+ `<span class="go-name">${COLOR_NAME[r.color]}${isYou ? " · You" : ""} <small>${r.label}</small></span>`
+			+ `<span class="go-score">${r.score}</span>`;
+		standings.appendChild(row);
+	}
+	overlay.classList.remove("hidden");
 }
 
 function renderBoard() {
@@ -115,82 +158,75 @@ function renderBoard() {
 function renderStatus() {
 	statusEl.classList.remove("your-turn");
 	if (state.status === "game_over") {
-		const best = Object.entries(state.final_scores).sort((a, b) => b[1] - a[1])[0];
-		statusEl.textContent = `Game over — ${COLOR_NAME[best[0]]} wins (${best[1]}).`;
+		const order = Object.entries(state.final_scores).sort((a, b) => b[1] - a[1]);
+		statusEl.textContent = `Game over — ${COLOR_NAME[order[0][0]]} wins with ${order[0][1]}.`;
 		return;
 	}
 	if (state.your_turn) {
-		statusEl.textContent = "Your turn — pick a piece.";
+		statusEl.textContent = "Your turn — pick a piece, line it up, then Confirm.";
 		statusEl.classList.add("your-turn");
 		return;
 	}
 	const cur = (state.seats || []).find((s) => s.color === state.current_color);
-	if (state.status === "bot_thinking" && cur) {
-		statusEl.textContent = `${cur.label} is thinking…`;
-	} else if (state.current_color) {
-		statusEl.textContent = `Waiting for ${COLOR_NAME[state.current_color]}…`;
-	} else {
-		statusEl.textContent = "Starting…";
-	}
+	if (state.status === "bot_thinking" && cur) statusEl.textContent = `${cur.label} (${COLOR_NAME[cur.color]}) is thinking…`;
+	else if (state.current_color) statusEl.textContent = `Waiting for ${COLOR_NAME[state.current_color]}…`;
+	else statusEl.textContent = "Starting…";
 }
 
-function renderScores() {
-	scoresEl.innerHTML = "";
-	for (const s of state.seats) {
-		const row = document.createElement("div");
-		row.className = "score-row"
-			+ (s.color === state.current_color ? " current" : "")
-			+ (s.done ? " done" : "");
-		row.innerHTML =
-			`<span class="swatch c${s.color_id}"></span>`
-			+ `<span class="who">${COLOR_NAME[s.color]} · ${s.label}</span>`
-			+ `<span class="pts">${s.score}</span>`;
-		scoresEl.appendChild(row);
-	}
-}
+function renderSeatCards() {
+	for (const seat of state.seats) {
+		const card = document.getElementById("card-" + seat.color);
+		const active = seat.color === state.current_color && state.status !== "game_over";
+		card.className = "seat-card" + (active ? " active" : "") + (seat.done ? " out" : "");
+		card.style.setProperty("--acc", `var(--c${seat.color_id})`);
 
-function renderTray() {
-	trayEl.innerHTML = "";
-	const color = state.your_turn ? state.current_color : null;
-	const headerEl = document.getElementById("tray-header");
-	if (!color) {
-		headerEl.textContent =
-			state.your_colors && state.your_colors.length ? "Your pieces (wait for your turn)" : "Spectating";
-	} else {
-		headerEl.textContent = "Your pieces";
-	}
-	const pieces = color ? (state.your_pieces[color] || []) : [];
-	for (const p of pieces) {
-		const firstO = Object.keys(p.orientations)[0];
-		trayEl.appendChild(pieceThumb(p, p.orientations[firstO], color));
-	}
-}
+		const isYou = (state.your_colors || []).includes(seat.color);
+		let sub;
+		if (seat.done) sub = seat.pieces_left === 0 ? "Finished — all pieces placed" : "Out — no legal moves left";
+		else sub = `${seat.pieces_left} piece${seat.pieces_left === 1 ? "" : "s"} left`;
 
-function pieceThumb(p, grid, color) {
-	const el = document.createElement("div");
-	el.className = "piece" + (sel.piece === p.name ? " selected" : "");
-	el.style.gridTemplateColumns = `repeat(${grid[0].length}, 10px)`;
-	el.style.setProperty("--sel", `var(--c${colorId(color)})`);
-	for (const row of grid) {
-		for (const v of row) {
-			const pc = document.createElement("div");
-			pc.className = "pc " + (v ? "on" : "off");
-			el.appendChild(pc);
+		card.innerHTML =
+			`<div class="card-head">`
+			+ `<span class="swatch c${seat.color_id}"></span>`
+			+ `<span class="card-name">${COLOR_NAME[seat.color]}${isYou ? " · You" : ""} <small>${seat.label}</small></span>`
+			+ `<span class="card-score">${seat.score}</span>`
+			+ `</div><div class="card-sub">${sub}</div><div class="card-pieces"></div>`;
+
+		const piecesEl = card.querySelector(".card-pieces");
+		const clickable = isYou && state.your_turn && seat.color === state.current_color && !seat.done;
+		const yourMap = clickable ? byName(state.your_pieces[seat.color] || []) : null;
+		for (const p of (state.players_pieces[seat.color] || [])) {
+			const mini = miniPiece(p.grid, seat.color_id, clickable && sel.piece === p.name);
+			mini.title = `${p.name} (${p.block_count})`;
+			if (clickable) {
+				mini.classList.add("clickable");
+				mini.addEventListener("click", () => selectPiece(yourMap[p.name], seat.color));
+			}
+			piecesEl.appendChild(mini);
 		}
 	}
-	el.title = `${p.name} (${p.block_count})`;
-	el.addEventListener("click", () => selectPiece(p, color));
-	return el;
 }
 
-function colorId(color) {
-	const seat = state.seats.find((s) => s.color === color);
-	return seat ? seat.color_id : 1;
+function byName(list) { const m = {}; for (const p of list) m[p.name] = p; return m; }
+
+function miniPiece(grid, colorId, selected) {
+	const el = document.createElement("div");
+	el.className = "mini" + (selected ? " selected" : "");
+	el.style.gridTemplateColumns = `repeat(${grid[0].length}, 5px)`;
+	el.style.setProperty("--pcol", `var(--c${colorId})`);
+	for (const row of grid) for (const v of row) {
+		const pc = document.createElement("div");
+		pc.className = "pc " + (v ? "on" : "off");
+		el.appendChild(pc);
+	}
+	return el;
 }
 
 // ---- selection + preview ---------------------------------------------------
 
 function selectPiece(p, color) {
+	if (!p) return;
+	clearPending();
 	hintEl.textContent = "";
 	hintEl.classList.remove("error");
 	sel.color = color;
@@ -199,12 +235,11 @@ function selectPiece(p, color) {
 	sel.byOrientation = {};
 	sel.keyMap = {};
 	for (const k of Object.keys(p.orientations)) sel.keyMap[gridKey(p.orientations[k])] = k;
-	// show the natural orientation immediately; placements refine the board
 	sel.curO = Object.keys(p.orientations)[0];
 	sel.curGrid = p.orientations[sel.curO];
-	renderTray();             // highlight selection in tray
 	renderPreview();
 	setControlsEnabled(true);
+	highlightSelectedThumb();
 	send({ type: "select_piece", color, piece: p.name });
 }
 
@@ -213,11 +248,10 @@ function onPlacements(msg) {
 	sel.byOrientation = msg.by_orientation || {};
 	const valid = Object.keys(sel.byOrientation);
 	if (valid.length === 0) {
-		hintEl.textContent = "No legal spot for this piece anywhere — pick another.";
+		hintEl.textContent = "No legal spot for this piece — pick another.";
 		highlightOrientation();
 		return;
 	}
-	// jump to a valid orientation so the player immediately sees placements
 	if (!(sel.curO in sel.byOrientation)) {
 		setOrientation(valid.map(Number).sort((a, b) => a - b)[0].toString());
 		return;
@@ -226,7 +260,8 @@ function onPlacements(msg) {
 }
 
 function setOrientation(o) {
-	if (!(o in sel.pieceData.orientations)) return;
+	if (!sel.pieceData || !(o in sel.pieceData.orientations)) return;
+	clearPending();
 	sel.curO = o;
 	sel.curGrid = sel.pieceData.orientations[o];
 	renderPreview();
@@ -235,18 +270,13 @@ function setOrientation(o) {
 
 function renderPreview() {
 	previewEl.innerHTML = "";
-	if (!sel.curGrid) {
-		previewEl.innerHTML = '<span class="empty">Pick a piece →</span>';
-		return;
-	}
-	previewEl.style.gridTemplateColumns = `repeat(${sel.curGrid[0].length}, 18px)`;
-	previewEl.style.setProperty("--sel", `var(--c${colorId(sel.color)})`);
-	for (const row of sel.curGrid) {
-		for (const v of row) {
-			const pc = document.createElement("div");
-			pc.className = "pc " + (v ? "on" : "off");
-			previewEl.appendChild(pc);
-		}
+	if (!sel.curGrid) { previewEl.innerHTML = '<span class="empty">Pick a piece</span>'; return; }
+	previewEl.style.gridTemplateColumns = `repeat(${sel.curGrid[0].length}, 16px)`;
+	previewEl.style.setProperty("--pcol", `var(--c${COLOR_ID[sel.color] || 1})`);
+	for (const row of sel.curGrid) for (const v of row) {
+		const pc = document.createElement("div");
+		pc.className = "pc " + (v ? "on" : "off");
+		previewEl.appendChild(pc);
 	}
 }
 
@@ -259,53 +289,65 @@ function highlightOrientation() {
 		anchors.set(r + "," + c, pl);
 	}
 	if (placements.length) {
-		hintEl.textContent = `${placements.length} spot${placements.length === 1 ? "" : "s"} in this orientation. `
-			+ "Hover the board to preview, click to place.";
+		hintEl.textContent = `${placements.length} spot${placements.length === 1 ? "" : "s"} for this orientation — click one to line it up.`;
 		hintEl.classList.remove("error");
 	} else if (Object.keys(sel.byOrientation).length) {
-		hintEl.textContent = "No spot in this orientation — rotate or flip to find one.";
+		hintEl.textContent = "No spot in this orientation — rotate or flip.";
 		hintEl.classList.remove("error");
 	}
 }
 
-// ---- grid transforms (client-side rotate / flip) ---------------------------
+function highlightSelectedThumb() {
+	for (const el of document.querySelectorAll(".mini.selected")) el.classList.remove("selected");
+	// re-render handled by renderSeatCards on next state; mark current eagerly is optional
+}
 
-function rotateCW(grid) {
-	const R = grid.length, C = grid[0].length;
-	const out = Array.from({ length: C }, () => Array(R).fill(0));
-	for (let r = 0; r < R; r++) for (let c = 0; c < C; c++) out[c][R - 1 - r] = grid[r][c];
-	return out;
+// ---- confirm-before-place --------------------------------------------------
+
+function choosePending(pl) {
+	clearHover();
+	clearPendingHighlight();
+	pending = pl;
+	for (const [r, c] of pl.cells) cellAt(r, c).classList.add("pending");
+	confirmBtn.classList.remove("hidden");
+	cancelBtn.classList.remove("hidden");
+	hintEl.textContent = "Confirm this placement?  (Enter to confirm, Esc to cancel)";
+	hintEl.classList.remove("error");
 }
-function rotateCCW(grid) {
-	const R = grid.length, C = grid[0].length;
-	const out = Array.from({ length: C }, () => Array(R).fill(0));
-	for (let r = 0; r < R; r++) for (let c = 0; c < C; c++) out[C - 1 - c][r] = grid[r][c];
-	return out;
-}
-function flipH(grid) { return grid.map((row) => row.slice().reverse()); }
-function gridKey(grid) { return grid.map((r) => r.join("")).join("/"); }
+
+function clearPending() { clearPendingHighlight(); pending = null; confirmBtn.classList.add("hidden"); cancelBtn.classList.add("hidden"); }
+function clearPendingHighlight() { for (const el of cells) el.classList.remove("pending"); }
+
+confirmBtn.addEventListener("click", () => {
+	if (pending) { send({ type: "make_move", move_id: pending.move_id }); clearPending(); }
+});
+cancelBtn.addEventListener("click", () => { clearPending(); highlightOrientation(); });
+
+// ---- transforms (rotate / flip) --------------------------------------------
+
+function rotateCW(g) { const R = g.length, C = g[0].length, o = Array.from({ length: C }, () => Array(R).fill(0)); for (let r = 0; r < R; r++) for (let c = 0; c < C; c++) o[c][R - 1 - r] = g[r][c]; return o; }
+function rotateCCW(g) { const R = g.length, C = g[0].length, o = Array.from({ length: C }, () => Array(R).fill(0)); for (let r = 0; r < R; r++) for (let c = 0; c < C; c++) o[C - 1 - c][r] = g[r][c]; return o; }
+function flipH(g) { return g.map((row) => row.slice().reverse()); }
+function gridKey(g) { return g.map((r) => r.join("")).join("/"); }
 
 function applyTransform(fn) {
 	if (!sel.curGrid) return;
 	const o = sel.keyMap[gridKey(fn(sel.curGrid))];
 	if (o !== undefined) setOrientation(o);
 }
-
 rotCwBtn.addEventListener("click", () => applyTransform(rotateCW));
 rotCcwBtn.addEventListener("click", () => applyTransform(rotateCCW));
 flipBtn.addEventListener("click", () => applyTransform(flipH));
 clearBtn.addEventListener("click", clearSelection);
 
 function setControlsEnabled(on) {
-	rotCwBtn.disabled = !on;
-	rotCcwBtn.disabled = !on;
-	flipBtn.disabled = !on;
-	clearBtn.disabled = !on;
+	rotCwBtn.disabled = !on; rotCcwBtn.disabled = !on; flipBtn.disabled = !on; clearBtn.disabled = !on;
 }
 
-// ---- clearing --------------------------------------------------------------
+// ---- clearing / hover ------------------------------------------------------
 
 function clearSelection() {
+	clearPending();
 	sel.color = null; sel.piece = null; sel.pieceData = null;
 	sel.byOrientation = {}; sel.keyMap = {}; sel.curO = null; sel.curGrid = null;
 	setControlsEnabled(false);
@@ -313,32 +355,33 @@ function clearSelection() {
 	renderPreview();
 	hintEl.textContent = "";
 	hintEl.classList.remove("error");
-	const selectedEl = trayEl.querySelector(".piece.selected");
-	if (selectedEl) selectedEl.classList.remove("selected");
+}
+function clearAnchors() { clearHover(); for (const el of cells) el.classList.remove("anchor"); anchors.clear(); }
+function showHover(list) { clearHover(); for (const [r, c] of list) { cellAt(r, c).classList.add("preview"); previewCells.push([r, c]); } }
+function clearHover() { for (const [r, c] of previewCells) cellAt(r, c).classList.remove("preview"); previewCells = []; }
+
+// ---- toast -----------------------------------------------------------------
+
+function maybeToast(ev) {
+	if (!ev || ev.id === lastEventId) return;
+	lastEventId = ev.id;
+	toastEl.innerHTML = `<span class="dot c${COLOR_ID[ev.color]}"></span>${ev.message}`;
+	toastEl.classList.remove("hidden");
+	if (toastTimer) clearTimeout(toastTimer);
+	toastTimer = setTimeout(() => toastEl.classList.add("hidden"), 3600);
 }
 
-function clearAnchors() {
-	clearBoardPreview();
-	for (const el of cells) el.classList.remove("anchor");
-	anchors.clear();
-}
+// ---- keyboard --------------------------------------------------------------
 
-function showPreview(cellsList) {
-	clearBoardPreview();
-	for (const [r, c] of cellsList) {
-		cellAt(r, c).classList.add("preview");
-		previewCells.push([r, c]);
-	}
-}
-
-function clearBoardPreview() {
-	for (const [r, c] of previewCells) cellAt(r, c).classList.remove("preview");
-	previewCells = [];
-}
-
-// ---- controls --------------------------------------------------------------
+document.addEventListener("keydown", (e) => {
+	if (e.key === "Enter" && pending) { confirmBtn.click(); }
+	else if (e.key === "Escape") { if (pending) cancelBtn.click(); else clearSelection(); }
+	else if ((e.key === "r" || e.key === "R") && sel.curGrid) { applyTransform(rotateCW); }
+	else if ((e.key === "f" || e.key === "F") && sel.curGrid) { applyTransform(flipH); }
+});
 
 document.getElementById("new-game").addEventListener("click", () => send({ type: "new_game" }));
+document.getElementById("go-newgame").addEventListener("click", () => send({ type: "new_game" }));
 
 renderPreview();
 connect();

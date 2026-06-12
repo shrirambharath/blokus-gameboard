@@ -5,6 +5,7 @@ Clients identify themselves with a token (persisted in localStorage) so they can
 reconnect to their seat. Extra clients become spectators until 'New Game'.
 """
 
+import os
 import secrets
 from pathlib import Path
 
@@ -18,15 +19,23 @@ from .session import GameSession
 
 STATIC = Path(__file__).parent / "static"
 
+# Pacing beat before each seat acts. Override with e.g. BLOKUS_TURN_DELAY=0.2
+TURN_DELAY = float(os.environ.get("BLOKUS_TURN_DELAY", "0.6"))
+
 
 def make_default_session():
+	# Demo mode: BLOKUS_ALL_BOTS=1 makes Blue a bot too, so a full game auto-plays
+	# to completion (handy for watching the end-game screen without playing).
+	blue = (BotController(gameboard.BlokusRandomPlayer(), label="Random bot")
+			if os.environ.get("BLOKUS_ALL_BOTS")
+			else HumanController(label="You"))
 	controllers = {
-		gameboard.BLUE: HumanController(label="You"),
+		gameboard.BLUE: blue,
 		gameboard.RED: BotController(gameboard.BlokusGreedyLookAheadPlayer(), label="Lookahead bot"),
 		gameboard.YELLOW: BotController(gameboard.BlokusGreedyPlayer(), label="Greedy bot"),
 		gameboard.GREEN: BotController(gameboard.BlokusRandomPlayer(), label="Random bot"),
 	}
-	return GameSession(controllers)
+	return GameSession(controllers, turn_delay=TURN_DELAY)
 
 
 class Hub:
@@ -77,9 +86,16 @@ async def ws_endpoint(ws: WebSocket):
 			data = await ws.receive_json()
 			await dispatch(ws, data)
 	except WebSocketDisconnect:
-		hub.connections.pop(ws, None)
+		on_disconnect(ws)
 	except Exception:
-		hub.connections.pop(ws, None)
+		on_disconnect(ws)
+
+
+def on_disconnect(ws):
+	token = hub.connections.pop(ws, None)
+	# free the seat only when this was the token's last live connection
+	if token and token not in hub.connections.values():
+		hub.session.release_token(token)
 
 
 async def dispatch(ws, data):

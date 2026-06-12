@@ -8,36 +8,52 @@
 </head>
 <body>
 	<header>
-		<h1>Blokus</h1>
+		<div class="brand">
+			<span class="logo" aria-hidden="true"></span>
+			<h1>Blokus</h1>
+		</div>
 		<div id="status" class="status">Connecting…</div>
-		<button id="new-game">New game</button>
+		<button id="new-game" class="btn btn-primary">New game</button>
 	</header>
 
-	<main>
-		<section id="board-wrap">
+	<div id="toast" class="toast hidden"></div>
+
+	<main id="layout">
+		<section class="seat-card" id="card-blue"></section>
+		<section class="seat-card" id="card-red"></section>
+
+		<div id="board-area">
 			<div id="board"></div>
-		</section>
+		</div>
 
-		<aside id="panel">
-			<div id="scores"></div>
-
-			<div id="preview-wrap">
-				<div id="preview-title">Selected piece</div>
-				<div id="preview"></div>
-				<div id="preview-controls">
-					<button id="rot-ccw" disabled title="Rotate left">⟲</button>
-					<button id="rot-cw" disabled title="Rotate right">⟳</button>
-					<button id="flip" disabled title="Flip / mirror">⇄ Flip</button>
-					<button id="clear" disabled>Clear</button>
-				</div>
-			</div>
-
-			<div id="tray-header">Your pieces</div>
-			<div id="tray"></div>
-
-			<div id="hint" class="hint"></div>
-		</aside>
+		<section class="seat-card" id="card-green"></section>
+		<section class="seat-card" id="card-yellow"></section>
 	</main>
+
+	<footer id="control-bar">
+		<div id="preview-box">
+			<div id="preview"></div>
+		</div>
+		<div id="control-actions">
+			<button id="rot-ccw" class="btn" disabled title="Rotate left">⟲</button>
+			<button id="rot-cw" class="btn" disabled title="Rotate right">⟳</button>
+			<button id="flip" class="btn" disabled title="Flip / mirror">⇄</button>
+			<button id="confirm" class="btn btn-confirm hidden">Confirm ✓</button>
+			<button id="cancel" class="btn btn-cancel hidden">Cancel</button>
+			<button id="clear" class="btn" disabled>Clear</button>
+		</div>
+		<div id="hint" class="hint"></div>
+	</footer>
+
+	<div id="gameover" class="overlay hidden">
+		<div class="overlay-card">
+			<div class="go-trophy">🏆</div>
+			<h2 id="go-title">Game over</h2>
+			<div id="go-sub" class="go-sub"></div>
+			<div id="go-standings"></div>
+			<button id="go-newgame" class="btn btn-primary">Play again</button>
+		</div>
+	</div>
 
 	<script src="/static/app.js"></script>
 </body>

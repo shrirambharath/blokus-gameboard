@@ -19,11 +19,11 @@ SEAT_COLORS = [BLUE, RED, YELLOW, GREEN]
 
 
 class GameSession:
-	def __init__(self, controllers, bot_delay=0.4, start_index=None):
+	def __init__(self, controllers, turn_delay=0.5, start_index=None):
 		# controllers: dict color -> BotController | HumanController
 		self.board = gameboard.BlokusBoard(20)
 		self.controllers = controllers
-		self.bot_delay = bot_delay
+		self.turn_delay = turn_delay   # pacing beat before each seat acts (seconds)
 
 		for color in SEAT_COLORS:
 			controllers[color].assign_color(self.board.players[color][COLOR], color)
@@ -38,6 +38,9 @@ class GameSession:
 		self.started = False
 		self.broadcaster = None       # async callable, injected by the server
 		self.lock = asyncio.Lock()
+		# transient notice (a player skipped / finished), surfaced to the UI
+		self.last_event = None
+		self.event_seq = 0
 
 	# ---- seat ownership ----------------------------------------------------
 
@@ -63,6 +66,13 @@ class GameSession:
 				return [color]
 		return []
 
+	def release_token(self, token):
+		"""Free any human seats held by this token (client left for good)."""
+		for color in self.human_colors():
+			if self.controllers[color].token == token:
+				self.controllers[color].token = None
+				self.controllers[color].name = None
+
 	# ---- turn flow ---------------------------------------------------------
 
 	async def advance(self):
@@ -77,27 +87,43 @@ class GameSession:
 			if color in self.done:
 				continue
 
+			# a short pacing beat so each move/skip is visible to everyone
+			if self.turn_delay:
+				await asyncio.sleep(self.turn_delay)
+
 			if self.controllers[color].is_human:
 				if not self._human_has_move(color):
-					self.done.add(color)   # auto-pass a stuck human
+					self._mark_done(color)   # auto-pass a stuck human, with a notice
+					await self._broadcast()
 					continue
 				self.current_color = color
 				self.status = "awaiting_human"
 				await self._broadcast()
 				return
 
-			# bot seat: compute + apply inline, with a small delay to animate
+			# bot seat: compute + apply inline
 			self.current_color = color
 			self.status = "bot_thinking"
 			if not self._bot_move(color):
-				self.done.add(color)
+				self._mark_done(color)
 			await self._broadcast()
-			await asyncio.sleep(self.bot_delay)
 
 		self.status = "game_over"
 		self.current_color = None
 		self._finalize()
 		await self._broadcast()
+
+	def _mark_done(self, color):
+		"""Retire a seat and record why, so the UI can explain the skip."""
+		self.done.add(color)
+		self.event_seq += 1
+		pieces_left = len(self.board.pieces[color][UNPLAYED])
+		if pieces_left == 0:
+			reason, message = "finished", "%s placed all 21 pieces!" % color.capitalize()
+		else:
+			reason, message = "no_moves", "%s has no legal move — sitting out." % color.capitalize()
+		self.last_event = {"id": self.event_seq, "color": color,
+						   "reason": reason, "message": message, "pieces_left": pieces_left}
 
 	async def handle_move(self, token, move_id):
 		"""Apply a human move (by move_id), then advance through the bots."""
@@ -111,7 +137,13 @@ class GameSession:
 				piece_name, o_index, ci, cj = self._parse_move_id(move_id)
 			except Exception:
 				return False, "malformed move"
-			if not self._apply_human_move(color, piece_name, o_index, ci, cj):
+			# play_piece raises (not returns False) on a stale/duplicate piece or a
+			# bad orientation; treat any such failure as a rejected move.
+			try:
+				applied = self._apply_human_move(color, piece_name, o_index, ci, cj)
+			except Exception:
+				applied = False
+			if not applied:
 				return False, "illegal move"
 			await self._broadcast()
 			await self._advance_locked()
@@ -195,7 +227,22 @@ class GameSession:
 			"status": self.status,
 			"start_color": self.turn_order[self.start_index],
 			"final_scores": self.final_scores if self.status == "game_over" else None,
+			"last_event": self.last_event,
+			"players_pieces": self._all_pieces_thumbs(),
 		}
+
+	def _all_pieces_thumbs(self):
+		"""Every seat's remaining pieces (base shape) for the inventory display."""
+		out = {}
+		for color in SEAT_COLORS:
+			items = [{
+				"name": name,
+				"block_count": piece.block_count,
+				"grid": [[int(v) for v in row] for row in piece.piece_grid.tolist()],
+			} for name, piece in self.board.pieces[color][UNPLAYED].items()]
+			items.sort(key=lambda p: (-p["block_count"], p["name"]))
+			out[color] = items
+		return out
 
 	def private_state(self, token):
 		my_colors = self.colors_owned_by(token)
