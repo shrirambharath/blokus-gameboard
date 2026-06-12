@@ -19,7 +19,8 @@ SEAT_COLORS = [BLUE, RED, YELLOW, GREEN]
 
 
 class GameSession:
-	def __init__(self, controllers, turn_delay=0.5, start_index=None):
+	def __init__(self, controllers, turn_delay=0.5, start_index=None,
+				 claim_groups=None, teams=None):
 		# controllers: dict color -> BotController | HumanController
 		self.board = gameboard.BlokusBoard(20)
 		self.controllers = controllers
@@ -27,6 +28,16 @@ class GameSession:
 
 		for color in SEAT_COLORS:
 			controllers[color].assign_color(self.board.players[color][COLOR], color)
+
+		# claim_groups: human colors claimed together by one client. Phase 1 -> each
+		# its own group; Phase 2 -> [[blue, yellow]] (one client owns both diagonals).
+		self.claim_groups = (claim_groups if claim_groups is not None
+							  else [[c] for c in SEAT_COLORS if controllers[c].is_human])
+		# teams: how colors are grouped for scoring/winner display. Default: one
+		# team per color (free-for-all). Phase 2 -> You (blue+yellow) vs Bot (red+green).
+		self.teams = (teams if teams is not None
+					  else [{"label": getattr(controllers[c], "label", c), "colors": [c]}
+							for c in SEAT_COLORS])
 
 		self.turn_order = SEAT_COLORS[:]
 		self.start_index = start_index if start_index is not None else random.randint(0, 3)
@@ -59,11 +70,13 @@ class GameSession:
 		owned = self.colors_owned_by(token)
 		if owned:
 			return owned
-		for color in self.human_colors():
-			if self.controllers[color].token is None:
-				self.controllers[color].token = token
-				self.controllers[color].name = name
-				return [color]
+		# claim the first group whose seats are all free (one client takes the whole group)
+		for group in self.claim_groups:
+			if all(self.controllers[c].token is None for c in group):
+				for c in group:
+					self.controllers[c].token = token
+					self.controllers[c].name = name
+				return list(group)
 		return []
 
 	def release_token(self, token):
@@ -229,7 +242,22 @@ class GameSession:
 			"final_scores": self.final_scores if self.status == "game_over" else None,
 			"last_event": self.last_event,
 			"players_pieces": self._all_pieces_thumbs(),
+			"teams": self._team_state(),
 		}
+
+	def _team_state(self):
+		"""Teams grouped for scoring (a team's score is the sum of its colors)."""
+		out = []
+		for t in self.teams:
+			members = [{"color": c, "color_id": self.board.players[c][COLOR],
+						"score": self._score(c)} for c in t["colors"]]
+			out.append({
+				"label": t["label"],
+				"colors": list(t["colors"]),
+				"score": sum(m["score"] for m in members),
+				"members": members,
+			})
+		return out
 
 	def _all_pieces_thumbs(self):
 		"""Every seat's remaining pieces (base shape) for the inventory display."""

@@ -21,21 +21,46 @@ STATIC = Path(__file__).parent / "static"
 
 # Pacing beat before each seat acts. Override with e.g. BLOKUS_TURN_DELAY=0.2
 TURN_DELAY = float(os.environ.get("BLOKUS_TURN_DELAY", "0.6"))
+# "phase1" = you (blue) vs 3 bots; "phase2" = you (blue+yellow) vs one bot (red+green)
+MODE = os.environ.get("BLOKUS_MODE", "phase2")
+ALL_BOTS = bool(os.environ.get("BLOKUS_ALL_BOTS"))
+
+C = gameboard
+
+
+def _bot(label="Bot"):
+	return BotController(C.BlokusGreedyLookAheadPlayer(), label=label)
+
+
+def _phase1():
+	blue = _bot("Random bot") if ALL_BOTS else HumanController(label="You")
+	controllers = {
+		C.BLUE: blue,
+		C.RED: BotController(C.BlokusGreedyLookAheadPlayer(), label="Lookahead bot"),
+		C.YELLOW: BotController(C.BlokusGreedyPlayer(), label="Greedy bot"),
+		C.GREEN: BotController(C.BlokusRandomPlayer(), label="Random bot"),
+	}
+	claim_groups = [] if ALL_BOTS else [[C.BLUE]]
+	return GameSession(controllers, turn_delay=TURN_DELAY, claim_groups=claim_groups)
+
+
+def _phase2():
+	# You play the blue+yellow diagonal; one bot plays the red+green diagonal.
+	mk_you = _bot if ALL_BOTS else (lambda: HumanController(label="You"))
+	controllers = {
+		C.BLUE: mk_you(), C.YELLOW: mk_you(),
+		C.RED: _bot(), C.GREEN: _bot(),
+	}
+	claim_groups = [] if ALL_BOTS else [[C.BLUE, C.YELLOW]]
+	teams = [
+		{"label": "You", "colors": [C.BLUE, C.YELLOW]},
+		{"label": "Bot", "colors": [C.RED, C.GREEN]},
+	]
+	return GameSession(controllers, turn_delay=TURN_DELAY, claim_groups=claim_groups, teams=teams)
 
 
 def make_default_session():
-	# Demo mode: BLOKUS_ALL_BOTS=1 makes Blue a bot too, so a full game auto-plays
-	# to completion (handy for watching the end-game screen without playing).
-	blue = (BotController(gameboard.BlokusRandomPlayer(), label="Random bot")
-			if os.environ.get("BLOKUS_ALL_BOTS")
-			else HumanController(label="You"))
-	controllers = {
-		gameboard.BLUE: blue,
-		gameboard.RED: BotController(gameboard.BlokusGreedyLookAheadPlayer(), label="Lookahead bot"),
-		gameboard.YELLOW: BotController(gameboard.BlokusGreedyPlayer(), label="Greedy bot"),
-		gameboard.GREEN: BotController(gameboard.BlokusRandomPlayer(), label="Random bot"),
-	}
-	return GameSession(controllers, turn_delay=TURN_DELAY)
+	return _phase1() if MODE == "phase1" else _phase2()
 
 
 class Hub:

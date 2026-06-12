@@ -94,53 +94,77 @@ function handle(msg) {
 function render() {
 	renderBoard();
 	renderStatus();
+	renderScoreboard();
 	renderSeatCards();
 	renderGameOver();
 }
 
+function renderScoreboard() {
+	const el = document.getElementById("scoreboard");
+	const teams = state.teams || [];
+	// only show the team scoreboard when colors are grouped (e.g. Phase 2: You vs Bot)
+	if (teams.length === 0 || teams.length >= 4) { el.classList.add("hidden"); return; }
+	el.innerHTML = "";
+	for (const t of teams) {
+		const you = t.colors.some((c) => (state.your_colors || []).includes(c));
+		const sw = t.members.map((m) => `<span class="swatch c${m.color_id}"></span>`).join("");
+		const box = document.createElement("div");
+		box.className = "team" + (you ? " you" : "");
+		box.innerHTML = `<span class="team-swatches">${sw}</span>`
+			+ `<span class="team-label">${you ? "You" : t.label}</span>`
+			+ `<span class="team-score">${t.score}</span>`;
+		el.appendChild(box);
+	}
+	el.classList.remove("hidden");
+}
+
 function renderGameOver() {
 	const overlay = document.getElementById("gameover");
-	if (state.status !== "game_over" || !state.final_scores) {
+	if (state.status !== "game_over" || !state.teams) {
 		overlay.classList.add("hidden");
 		return;
 	}
-	const rows = state.seats
-		.map((s) => ({ ...s, score: state.final_scores[s.color] }))
-		.sort((a, b) => b.score - a.score);
+	const isYours = (t) => t.colors.some((c) => (state.your_colors || []).includes(c));
+	const rows = state.teams.slice().sort((a, b) => b.score - a.score);
 	const top = rows[0].score;
 	const winners = rows.filter((r) => r.score === top);
-	const youWon = winners.some((w) => (state.your_colors || []).includes(w.color));
+	const youWon = winners.some(isYours);
 
 	const card = overlay.querySelector(".overlay-card");
 	const titleEl = document.getElementById("go-title");
 	if (winners.length > 1) {
 		card.style.setProperty("--win", "var(--ink)");
-		titleEl.textContent = youWon
-			? "You tie for the win!"
-			: winners.map((w) => COLOR_NAME[w.color]).join(" & ") + " tie!";
+		titleEl.textContent = youWon ? "You tie for the win!" : winners.map((w) => teamName(w)).join(" & ") + " tie!";
 	} else {
-		card.style.setProperty("--win", `var(--c${winners[0].color_id})`);
-		titleEl.textContent = youWon ? "You win! 🎉" : `${COLOR_NAME[winners[0].color]} wins!`;
+		card.style.setProperty("--win", `var(--c${winners[0].members[0].color_id})`);
+		titleEl.textContent = youWon ? "You win! 🎉" : `${teamName(winners[0])} wins!`;
 	}
-	document.getElementById("go-sub").textContent =
-		`Final score: ${top}` + (winners.length === 1 ? ` · ${winners[0].label}` : "");
+	document.getElementById("go-sub").textContent = `Top score: ${top}`;
 
 	const standings = document.getElementById("go-standings");
 	standings.innerHTML = "";
-	for (const r of rows) {
-		const rank = rows.filter((x) => x.score > r.score).length + 1;
-		const isYou = (state.your_colors || []).includes(r.color);
+	for (const t of rows) {
+		const rank = rows.filter((x) => x.score > t.score).length + 1;
+		const sw = t.members.map((m) => `<span class="swatch c${m.color_id}"></span>`).join("");
+		const detail = t.members.length > 1
+			? t.members.map((m) => `${COLOR_NAME[m.color]} ${m.score}`).join(" + ")
+			: t.label;
 		const row = document.createElement("div");
-		row.className = "go-row" + (r.score === top ? " winner" : "");
-		row.style.setProperty("--win", `var(--c${r.color_id})`);
+		row.className = "go-row" + (t.score === top ? " winner" : "");
+		row.style.setProperty("--win", `var(--c${t.members[0].color_id})`);
 		row.innerHTML =
 			`<span class="go-rank">#${rank}</span>`
-			+ `<span class="swatch c${r.color_id}"></span>`
-			+ `<span class="go-name">${COLOR_NAME[r.color]}${isYou ? " · You" : ""} <small>${r.label}</small></span>`
-			+ `<span class="go-score">${r.score}</span>`;
+			+ `<span class="go-swatches">${sw}</span>`
+			+ `<span class="go-name">${isYours(t) ? "You" : teamName(t)} <small>${detail}</small></span>`
+			+ `<span class="go-score">${t.score}</span>`;
 		standings.appendChild(row);
 	}
 	overlay.classList.remove("hidden");
+}
+
+function teamName(t) {
+	// single-color teams (free-for-all) read better as the color name
+	return t.members.length === 1 ? COLOR_NAME[t.members[0].color] : t.label;
 }
 
 function renderBoard() {
@@ -163,7 +187,7 @@ function renderStatus() {
 		return;
 	}
 	if (state.your_turn) {
-		statusEl.textContent = "Your turn — pick a piece, line it up, then Confirm.";
+		statusEl.textContent = `Your turn — place a ${COLOR_NAME[state.current_color]} piece, then Confirm.`;
 		statusEl.classList.add("your-turn");
 		return;
 	}
