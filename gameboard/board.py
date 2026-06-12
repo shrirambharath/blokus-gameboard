@@ -24,6 +24,9 @@ class BoardStateException(Exception):
 class BlokusBoard:
 	def __init__(self, gridsize=20):
 		self.gridsize = gridsize
+		# Per-board corner-skip cache. Keeping it on the board (instead of the
+		# BlokusPlayerHelper class global) keeps concurrent games isolated.
+		self.skip_state = {}
 		self._setup_players()
 		self._setup_board()
 

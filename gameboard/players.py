@@ -41,7 +41,7 @@ class BlokusRandomPlayer(BlokusPlayer):
 			#no played pieces
 			_i_j_candidates = [(0,0)]
 		else:
-			_all_candidates = gameboard.BlokusPlayerHelper.identify_corners(_grid, _color_id)
+			_all_candidates = gameboard.BlokusPlayerHelper.identify_corners(_grid, _color_id, skip_state=getattr(board, 'skip_state', None))
 			_i_j_candidates = _all_candidates[_color_id]
 
 		_candidate_tuples = self._identify_i_j_moves(board, _i_j_candidates, _unplayed_pieces)
@@ -68,7 +68,7 @@ class BlokusGreedyPlayer(BlokusPlayer):
 			#no played pieces
 			_i_j_candidates = [(0,0)]
 		else:
-			_all_candidates = gameboard.BlokusPlayerHelper.identify_corners(_grid, _color_id)
+			_all_candidates = gameboard.BlokusPlayerHelper.identify_corners(_grid, _color_id, skip_state=getattr(board, 'skip_state', None))
 			_i_j_candidates = _all_candidates[_color_id]
 
 		_candidate_tuples = self._identify_i_j_moves(board, _i_j_candidates, _unplayed_pieces)
@@ -103,7 +103,7 @@ class BlokusGreedyLookAheadPlayer(BlokusPlayer):
 			#no played pieces
 			_i_j_candidates = [(0,0)]
 		else:
-			_all_candidates = gameboard.BlokusPlayerHelper.identify_corners(_grid, _color_id)
+			_all_candidates = gameboard.BlokusPlayerHelper.identify_corners(_grid, _color_id, skip_state=getattr(board, 'skip_state', None))
 			_i_j_candidates = _all_candidates[_color_id]
 
 		_candidate_tuples = self._identify_i_j_moves(board, _i_j_candidates, _unplayed_pieces)
@@ -130,7 +130,7 @@ class BlokusGreedyLookAheadPlayer(BlokusPlayer):
 						_temp_grid[coord_i + i][coord_j + j] = _color_id
 
 			# do not update the lookahead skip tracker
-			_temp_all_candidates = gameboard.BlokusPlayerHelper.identify_corners(_temp_grid, _color_id, False)
+			_temp_all_candidates = gameboard.BlokusPlayerHelper.identify_corners(_temp_grid, _color_id, False, skip_state=getattr(board, 'skip_state', None))
 
 			# calculate how playing this piece changes the corner count
 			differential = (3 * len(_temp_all_candidates[_color_id])) - sum([len(_temp_all_candidates[x]) for x in _temp_all_candidates.keys() if x != _color_id])

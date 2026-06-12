@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Blokus</title>
+	<link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+	<header>
+		<h1>Blokus</h1>
+		<div id="status" class="status">Connecting…</div>
+		<button id="new-game">New game</button>
+	</header>
+
+	<main>
+		<section id="board-wrap">
+			<div id="board"></div>
+		</section>
+
+		<aside id="panel">
+			<div id="scores"></div>
+			<div id="tray-header">Your pieces</div>
+			<div id="tray"></div>
+			<div id="controls">
+				<button id="rotate" disabled>Rotate ⟳</button>
+				<button id="clear" disabled>Clear selection</button>
+			</div>
+			<div id="hint" class="hint"></div>
+		</aside>
+	</main>
+
+	<script src="/static/app.js"></script>
+</body>
+</html>
