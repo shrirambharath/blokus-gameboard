@@ -46,6 +46,18 @@
 		<div id="hint" class="hint"></div>
 	</footer>
 
+	<div id="lobby" class="overlay hidden">
+		<div class="overlay-card lobby-card">
+			<h2>Game lobby</h2>
+			<div class="lobby-sub">Pick a color. Anyone can start — empty seats become bots.</div>
+			<label class="name-field">Your name
+				<input id="name-input" maxlength="14" placeholder="Player" autocomplete="off">
+			</label>
+			<div id="lobby-seats"></div>
+			<button id="start-game" class="btn btn-primary">Start game</button>
+		</div>
+	</div>
+
 	<div id="gameover" class="overlay hidden">
 		<div class="overlay-card">
 			<div class="go-trophy">🏆</div>

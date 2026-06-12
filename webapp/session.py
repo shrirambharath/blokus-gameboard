@@ -20,7 +20,7 @@ SEAT_COLORS = [BLUE, RED, YELLOW, GREEN]
 
 class GameSession:
 	def __init__(self, controllers, turn_delay=0.5, start_index=None,
-				 claim_groups=None, teams=None):
+				 claim_groups=None, teams=None, lobby=False):
 		# controllers: dict color -> BotController | HumanController
 		self.board = gameboard.BlokusBoard(20)
 		self.controllers = controllers
@@ -43,7 +43,10 @@ class GameSession:
 		self.start_index = start_index if start_index is not None else random.randint(0, 3)
 		self.idx = self.start_index
 		self.done = set()
-		self.status = "idle"          # idle | awaiting_human | bot_thinking | game_over
+		# Phase 3: lobby=True starts in a pre-game lobby where clients pick colors;
+		# unclaimed seats become bots at start_game().
+		self.lobby = lobby
+		self.status = "lobby" if lobby else "idle"   # lobby | idle | awaiting_human | bot_thinking | game_over
 		self.current_color = None
 		self.final_scores = {}
 		self.started = False
@@ -85,6 +88,38 @@ class GameSession:
 			if self.controllers[color].token == token:
 				self.controllers[color].token = None
 				self.controllers[color].name = None
+
+	# ---- lobby (Phase 3) ---------------------------------------------------
+
+	def take_seat(self, token, color, name=None):
+		"""Lobby: claim a specific color (one per client); returns success."""
+		if self.status != "lobby" or color not in SEAT_COLORS:
+			return False
+		ctrl = self.controllers[color]
+		if not ctrl.is_human or (ctrl.token is not None and ctrl.token != token):
+			return False   # not a seatable slot, or taken by someone else
+		self.release_token(token)   # at most one color per client
+		ctrl.token = token
+		ctrl.name = name or "Player"
+		return True
+
+	def leave_seat(self, token):
+		if self.status == "lobby":
+			self.release_token(token)
+
+	def start_game(self, bot_factory):
+		"""Lobby -> live: fill every unclaimed human seat with a bot, then begin."""
+		if self.status != "lobby":
+			return False
+		for color in SEAT_COLORS:
+			ctrl = self.controllers[color]
+			if ctrl.is_human and ctrl.token is None:
+				bot = bot_factory()
+				bot.assign_color(self.board.players[color][COLOR], color)
+				self.controllers[color] = bot
+		self.lobby = False
+		self.status = "idle"
+		return True
 
 	# ---- turn flow ---------------------------------------------------------
 
@@ -227,6 +262,7 @@ class GameSession:
 				"color": color,
 				"color_id": self.board.players[color][COLOR],
 				"is_human": ctrl.is_human,
+				"open": ctrl.is_human and getattr(ctrl, "token", None) is None,
 				"label": getattr(ctrl, "label", ""),
 				"name": getattr(ctrl, "name", None),
 				"done": color in self.done,

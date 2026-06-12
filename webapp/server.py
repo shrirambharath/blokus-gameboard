@@ -21,8 +21,9 @@ STATIC = Path(__file__).parent / "static"
 
 # Pacing beat before each seat acts. Override with e.g. BLOKUS_TURN_DELAY=0.2
 TURN_DELAY = float(os.environ.get("BLOKUS_TURN_DELAY", "0.6"))
-# "phase1" = you (blue) vs 3 bots; "phase2" = you (blue+yellow) vs one bot (red+green)
-MODE = os.environ.get("BLOKUS_MODE", "phase2")
+# phase1 = you (blue) vs 3 bots; phase2 = you (blue+yellow) vs one bot;
+# phase3 = lobby, multiple humans each pick a color, bots fill the rest.
+MODE = os.environ.get("BLOKUS_MODE", "phase3")
 ALL_BOTS = bool(os.environ.get("BLOKUS_ALL_BOTS"))
 
 C = gameboard
@@ -59,8 +60,21 @@ def _phase2():
 	return GameSession(controllers, turn_delay=TURN_DELAY, claim_groups=claim_groups, teams=teams)
 
 
+def _phase3():
+	# Lobby: every seat starts as an open human slot; players pick colors and
+	# unclaimed seats are filled with bots at start.
+	controllers = {c: HumanController(label="Open") for c in
+				   (C.BLUE, C.RED, C.YELLOW, C.GREEN)}
+	claim_groups = [[c] for c in (C.BLUE, C.RED, C.YELLOW, C.GREEN)]
+	return GameSession(controllers, turn_delay=TURN_DELAY, claim_groups=claim_groups, lobby=True)
+
+
 def make_default_session():
-	return _phase1() if MODE == "phase1" else _phase2()
+	if MODE == "phase1":
+		return _phase1()
+	if MODE == "phase2":
+		return _phase2()
+	return _phase3()
 
 
 class Hub:
@@ -95,6 +109,16 @@ class Hub:
 
 hub = Hub()
 app = FastAPI()
+
+
+@app.middleware("http")
+async def no_cache(request, call_next):
+	# LAN dev app: never let the browser serve a stale UI from cache.
+	response = await call_next(request)
+	response.headers["Cache-Control"] = "no-store"
+	return response
+
+
 app.mount("/static", StaticFiles(directory=str(STATIC)), name="static")
 
 
@@ -113,13 +137,18 @@ async def ws_endpoint(ws: WebSocket):
 	except WebSocketDisconnect:
 		on_disconnect(ws)
 	except Exception:
+		import traceback
+		traceback.print_exc()
 		on_disconnect(ws)
 
 
 def on_disconnect(ws):
 	token = hub.connections.pop(ws, None)
-	# free the seat only when this was the token's last live connection
-	if token and token not in hub.connections.values():
+	if not token or token in hub.connections.values():
+		return
+	# Free the seat only while in the lobby. Once a game is live, keep it so the
+	# player can reconnect by token (an abandoned seat resolves via New game).
+	if hub.session.lobby:
 		hub.session.release_token(token)
 
 
@@ -130,12 +159,28 @@ async def dispatch(ws, data):
 	if mtype == "join":
 		token = data.get("token") or secrets.token_hex(8)
 		hub.connections[ws] = token
-		session.claim_seat(token, data.get("name"))
+		# Lobby mode: the client picks a color via take_seat (no auto-claim/auto-start).
+		if not session.lobby:
+			session.claim_seat(token, data.get("name"))
 		await ws.send_json({"type": "welcome", "token": token})
-		if not session.started:
+		if not session.started and not session.lobby:
 			await session.advance()
 		else:
 			await hub.send_state(ws, token)
+
+	elif mtype == "take_seat":
+		token = hub.connections.get(ws)
+		session.take_seat(token, data.get("color"), data.get("name"))
+		await hub.broadcast()
+
+	elif mtype == "leave_seat":
+		token = hub.connections.get(ws)
+		session.leave_seat(token)
+		await hub.broadcast()
+
+	elif mtype == "start_game":
+		if session.start_game(lambda: BotController(C.BlokusGreedyLookAheadPlayer(), label="Bot")):
+			await session.advance()
 
 	elif mtype == "select_piece":
 		token = hub.connections.get(ws)
@@ -159,6 +204,10 @@ async def dispatch(ws, data):
 
 	elif mtype == "new_game":
 		hub.set_session(make_default_session())
-		for sock, token in hub.connections.items():
-			hub.session.claim_seat(token)
-		await hub.session.advance()
+		if hub.session.lobby:
+			# back to a fresh lobby; everyone re-picks a color
+			await hub.broadcast()
+		else:
+			for sock, token in hub.connections.items():
+				hub.session.claim_seat(token)
+			await hub.session.advance()

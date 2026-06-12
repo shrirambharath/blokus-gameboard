@@ -66,7 +66,7 @@ function anchorKey(el) {
 
 function connect() {
 	ws = new WebSocket(`ws://${location.host}/ws`);
-	ws.onopen = () => send({ type: "join", token: myToken });
+	ws.onopen = () => send({ type: "join", token: myToken, name: playerName() });
 	ws.onclose = () => { statusEl.textContent = "Disconnected — retrying…"; setTimeout(connect, 1500); };
 	ws.onmessage = (ev) => handle(JSON.parse(ev.data));
 }
@@ -97,7 +97,44 @@ function render() {
 	renderScoreboard();
 	renderSeatCards();
 	renderGameOver();
+	renderLobby();
 }
+
+function renderLobby() {
+	const overlay = document.getElementById("lobby");
+	if (state.status !== "lobby") { overlay.classList.add("hidden"); return; }
+	const mine = (state.your_colors || [])[0] || null;
+	const seatsEl = document.getElementById("lobby-seats");
+	seatsEl.innerHTML = "";
+	let humans = 0;
+	for (const seat of state.seats) {
+		const yours = seat.color === mine;
+		if (!seat.open) humans += 1;
+		let occ, action;
+		if (yours) { occ = "<b>You</b>"; action = `<button class="btn btn-cancel" data-leave>Leave</button>`; }
+		else if (seat.open) { occ = `<span class="muted">Open</span>`; action = `<button class="btn" data-take="${seat.color}">Take</button>`; }
+		else { occ = escapeHtml(seat.name || "Player"); action = ""; }
+		const row = document.createElement("div");
+		row.className = "lobby-seat" + (yours ? " yours" : "");
+		row.innerHTML =
+			`<span class="swatch c${seat.color_id}"></span>`
+			+ `<span class="lobby-color">${COLOR_NAME[seat.color]}</span>`
+			+ `<span class="lobby-occ">${occ}</span>`
+			+ `<span class="lobby-action">${action}</span>`;
+		seatsEl.appendChild(row);
+	}
+	seatsEl.querySelectorAll("[data-take]").forEach((b) =>
+		b.addEventListener("click", () => takeSeat(b.dataset.take)));
+	const leave = seatsEl.querySelector("[data-leave]");
+	if (leave) leave.addEventListener("click", () => send({ type: "leave_seat" }));
+	document.getElementById("start-game").textContent =
+		humans > 0 ? `Start game (${humans} player${humans === 1 ? "" : "s"}, rest bots)` : "Start game (all bots)";
+	overlay.classList.remove("hidden");
+}
+
+function takeSeat(color) { send({ type: "take_seat", color, name: playerName() }); }
+function playerName() { return (document.getElementById("name-input").value || "").trim() || "Player"; }
+function escapeHtml(s) { return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
 
 function renderScoreboard() {
 	const el = document.getElementById("scoreboard");
@@ -181,6 +218,10 @@ function renderBoard() {
 
 function renderStatus() {
 	statusEl.classList.remove("your-turn");
+	if (state.status === "lobby") {
+		statusEl.textContent = "In the lobby — pick a color to join.";
+		return;
+	}
 	if (state.status === "game_over") {
 		const order = Object.entries(state.final_scores).sort((a, b) => b[1] - a[1]);
 		statusEl.textContent = `Game over — ${COLOR_NAME[order[0][0]]} wins with ${order[0][1]}.`;
@@ -406,6 +447,14 @@ document.addEventListener("keydown", (e) => {
 
 document.getElementById("new-game").addEventListener("click", () => send({ type: "new_game" }));
 document.getElementById("go-newgame").addEventListener("click", () => send({ type: "new_game" }));
+document.getElementById("start-game").addEventListener("click", () => send({ type: "start_game" }));
+
+const nameInput = document.getElementById("name-input");
+nameInput.value = localStorage.getItem("blokus_name") || "";
+nameInput.addEventListener("input", () => localStorage.setItem("blokus_name", nameInput.value));
+nameInput.addEventListener("change", () => {
+	if (state && (state.your_colors || []).length) takeSeat(state.your_colors[0]);
+});
 
 renderPreview();
 connect();
